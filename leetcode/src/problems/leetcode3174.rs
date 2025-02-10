@@ -3,17 +3,22 @@
 //! [1]: https://leetcode.com/problems/clear-digits
 
 pub fn clear_digits(s: String) -> String {
-    let mut stack = Vec::with_capacity(s.len());
+    let mut bytes = s.into_bytes();
 
-    for char in s.chars() {
-        if !char.is_ascii_digit() {
-            stack.push(char);
-        } else {
-            stack.pop();
+    let mut w: usize = 0;
+    for r in 0..bytes.len() {
+        let byte = bytes[r];
+        if byte.is_ascii_digit() {
+            w = w.saturating_sub(1);
+            continue;
         }
+
+        bytes[w] = byte;
+        w += 1;
     }
 
-    String::from_iter(stack)
+    bytes.truncate(w);
+    String::from_utf8(bytes).unwrap()
 }
 
 #[cfg(test)]
