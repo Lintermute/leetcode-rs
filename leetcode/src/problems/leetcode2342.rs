@@ -10,7 +10,7 @@ enum Max {
 pub fn maximum_sum(nums: Vec<i32>) -> i32 {
     use std::collections::HashMap;
 
-    let mut dsum_to_max = HashMap::<u32, Max>::new();
+    let mut dsum_to_max = HashMap::<i32, Max>::new();
     for k in nums {
         let dsum = digit_sum(k);
         let max = match dsum_to_max.get(&dsum) {
@@ -46,11 +46,13 @@ pub fn maximum_sum(nums: Vec<i32>) -> i32 {
         .unwrap_or(-1)
 }
 
-fn digit_sum(k: i32) -> u32 {
-    k.to_string()
-        .chars()
-        .map(|char| char.to_digit(10).unwrap())
-        .sum()
+fn digit_sum(mut k: i32) -> i32 {
+    let mut digit_sum = 0;
+    while k != 0 {
+        digit_sum += k % 10;
+        k /= 10;
+    }
+    digit_sum
 }
 
 #[cfg(test)]
