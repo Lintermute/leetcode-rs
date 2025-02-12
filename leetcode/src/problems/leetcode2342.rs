@@ -1,49 +1,23 @@
 //! LeetCode problem 2342: Max Sum of a Pair With Equal Sum of Digits:
 //! <https://leetcode.com/problems/max-sum-of-a-pair-with-equal-sum-of-digits>
 
-#[derive(Debug)]
-enum Max {
-    Single(i32),
-    Pair(i32, i32),
-}
-
 pub fn maximum_sum(nums: Vec<i32>) -> i32 {
-    use std::collections::HashMap;
+    use std::{cmp, collections::HashMap};
 
-    let mut dsum_to_max = HashMap::<i32, Max>::new();
+    let mut max = -1;
+    let mut dsum_to_max = HashMap::<i32, i32>::new();
+
     for k in nums {
         let dsum = digit_sum(k);
-        let max = match dsum_to_max.get(&dsum) {
-            None => Max::Single(k),
-            Some(&Max::Single(largest)) => {
-                let min = std::cmp::min(k, largest);
-                let max = std::cmp::max(k, largest);
-                Max::Pair(max, min)
-            }
-            Some(&Max::Pair(largest, second)) => {
-                if k > largest {
-                    Max::Pair(k, largest)
-                } else if k > second {
-                    Max::Pair(largest, k)
-                } else {
-                    Max::Pair(largest, second)
-                }
-            }
-        };
-
-        dsum_to_max.insert(dsum, max);
+        if let Some(&l) = dsum_to_max.get(&dsum) {
+            max = cmp::max(max, k + l);
+            dsum_to_max.insert(dsum, cmp::max(k, l));
+        } else {
+            dsum_to_max.insert(dsum, k);
+        }
     }
 
-    dbg!(&dsum_to_max);
-
-    dsum_to_max
-        .into_values()
-        .filter_map(|max| match max {
-            Max::Single(_) => None,
-            Max::Pair(a, b) => Some(a + b),
-        })
-        .max()
-        .unwrap_or(-1)
+    max
 }
 
 fn digit_sum(mut k: i32) -> i32 {
