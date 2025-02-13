@@ -1,0 +1,64 @@
+# Checks if all past commits pass the CI quality gate `cargo xtask ci`,
+# excluding moving targets (such as clippy or `cargo audit`).
+# This pipeline tries to indicate whether developers may use `git bisect`.
+
+name: Validate entire commit history
+
+on:
+  schedule:
+    #        ┌───────────── minute (0 - 59)
+    #        │ ┌───────────── hour (0 - 23)
+    #        │ │ ┌───────────── day of the month (1 - 31)
+    #        │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #        │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #        │ │ │ │ │
+    #        │ │ │ │ │
+    #        │ │ │ │ │
+    - cron: '0 0 * * MON'
+
+  workflow_dispatch:
+
+jobs:
+  check_each_commit:
+    name: check each commit
+    timeout-minutes: 240
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        branch: [ main ]
+
+    steps:
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    # Also, there may be errors due to changed line endings on Windows.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+        git config --global core.autocrlf false
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+        fetch-depth: 0
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    # FIXME: `xtask ci` may run `cargo build`, overwriting its own binary.
+    # FIXME: This is not possible on Windows, so install it before running it.
+    - name: Check old commits on ${{ matrix.branch }}
+      run: >
+        git rebase
+        --root
+        --rebase-merges
+        --exec 'cargo install --path xtask'
+        --exec 'xtask ci all --skip-moving-targets'

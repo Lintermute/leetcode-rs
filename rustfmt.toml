@@ -1,0 +1,23 @@
+max_width = 80
+newline_style = "Unix"
+chain_width = 40
+wrap_comments = true
+format_code_in_doc_comments = true
+doc_comment_code_block_width = 80
+normalize_comments = true
+normalize_doc_attributes = true
+format_macro_matchers = true
+hex_literal_case = "Upper"
+imports_granularity = "Crate"
+reorder_impl_items = true
+overflow_delimited_expr = true
+# Try to align members of structs and enums neatly. Default: 0 (off).
+# Our number is just a guess what might probably work...
+struct_field_align_threshold = 10
+enum_discrim_align_threshold = 10
+match_arm_leading_pipes = "Preserve"
+edition = "2021"
+use_field_init_shorthand = true
+unstable_features = true
+error_on_line_overflow = true
+error_on_unformatted = true

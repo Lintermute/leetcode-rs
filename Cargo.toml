@@ -1,0 +1,7 @@
+[workspace]
+members = [ "leetcode", "xtask" ]
+default-members = [ "leetcode" ]
+resolver = "2"
+
+[workspace.dependencies]
+test-case = "3.1.0"

@@ -1,0 +1,265 @@
+# Runs the CI quality gate: compilation, linting, testing, dependency checking,
+# and so on, on every single commit that would be added by the pull request,
+# each time the pull request receives a new push or is (re-)opened.
+#
+# Does NOT validate the result of the merge; see `validate.yaml` for that.
+# This pipeline is a "rebase --exec" variant of `validate.yaml`.
+#
+# Note that this pipeline requires `Cargo.lock` be up-to-date.
+# If it isn't, you'll have to run `cargo update`, commit `Cargo.lock`, and
+# rebase your branch to have that commit be the first one in your pull request.
+#
+# Please note the following refs:
+#
+# - github.ref      → refs/heads/$branch_name, resp. refs/pull/$pr_id/merge
+# - github.ref_name → $branch_name, resp. $pr_id/merge
+# - github.head_ref → $source_branch_name, e.g. "feature/foobar"
+# - github.base_ref → $destination_branch, e.g. "main"
+
+name: Validate each commit
+
+on:
+
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+
+  rustfmt:
+    timeout-minutes: 5
+
+    # Results should be the same on all systems.
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    # Also, sometimes there are linter errors due to changed line endings.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+        git config --global core.autocrlf false
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 0
+
+    - name: Install nightly Rust toolchain with rustfmt
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rustfmt
+
+    - name: Run rustfmt
+      run: >
+        git rebase
+        --fork-point 'origin/${{ github.base_ref }}'
+        --exec 'cargo xtask ci rustfmt'
+
+
+  build:
+    name: build & test
+    timeout-minutes: 30
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        profile: [ dev, release ]
+
+    steps:
+
+    - name: Install stable Rust toolchain with clippy
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 0
+
+    # FIXME: `xtask ci build` tries to overwrite its own binary.
+    # FIXME: This is not possible on Windows, so install it before running it.
+    - name: Build and test
+      run: >
+        git rebase
+        --fork-point 'origin/${{ github.base_ref }}'
+        --exec 'cargo install --path xtask'
+        --exec 'xtask ci clippy --profile ${{ matrix.profile }}'
+        --exec 'xtask ci test   --profile ${{ matrix.profile }}'
+        --exec 'xtask ci build  --profile ${{ matrix.profile }}'
+
+
+  coverage:
+    timeout-minutes: 30
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest ]
+        profile: [ dev, release ]
+
+    steps:
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 0
+
+    # FIXME: Remove nightly once tarpaulin can run doctests on stable again
+    - name: Install nightly Rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-tarpaulin
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-tarpaulin
+
+    - name: Check coverage
+      run: >
+        git rebase
+        --fork-point 'origin/${{ github.base_ref }}'
+        --exec 'cargo xtask ci tarpaulin --profile ${{ matrix.profile }}'
+
+
+  miri:
+    timeout-minutes: 60
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+
+    steps:
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 0
+
+    - name: Install nightly Rust toolchain with miri
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    # FIXME: `xtask ci miri` runs `cargo clean`, deleting its own binary.
+    # FIXME: This is not possible on Windows, so install it before running it.
+    - name: Run MIRI tests
+      run: >
+        git rebase
+        --fork-point 'origin/${{ github.base_ref }}'
+        --exec 'cargo install --path xtask'
+        --exec 'xtask ci miri'
+
+
+  docs:
+    timeout-minutes: 15
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        profile: [ dev, release ]
+
+    steps:
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 0
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    - name: Build documentation
+      run: >
+        git rebase
+        --fork-point 'origin/${{ github.base_ref }}'
+        --exec 'cargo xtask ci docs --profile ${{ matrix.profile }}'
+
+
+  deps:
+    timeout-minutes: 5
+
+    # Results should be the same on all systems.
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # For whatever reason, Git needs user name and email for the rebase
+    # on some agents but not on others.
+    - name: Configure Git
+      run: |
+        git config --global user.email "runner@github.com"
+        git config --global user.name "GitHub, Runner"
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 0
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-audit & cargo-upgrades
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-audit, cargo-upgrades
+
+    - name: Check dependencies
+      run: >
+        git rebase
+        --fork-point 'origin/${{ github.base_ref }}'
+        --exec 'cargo xtask ci deps'

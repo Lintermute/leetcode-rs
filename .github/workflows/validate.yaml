@@ -1,0 +1,324 @@
+# Runs the CI quality gate: compilation, linting, testing, dependency checking,
+# and so on. Parallel implementation of the steps defined in the `xtask` crate.
+#
+# This pipeline is triggered on push and on pull request events.
+# If triggered by a push, this pipeline will check the commit that was pushed
+# (i.e. the Git HEAD of the branch that was pushed to).
+# If triggered by a PR event, this pipeline will validate
+# what would be the result of merging that PR.
+# If you're pushing to a branch that has an open PR, both will be checked.
+#
+# Note that this pipeline requires `Cargo.lock` be up-to-date.
+# If it isn't, you'll have to run `cargo update`, commit `Cargo.lock`, and
+# rebase your branch to have that commit be the first one in your pull request.
+#
+# Please note the following refs:
+#
+# - github.ref      → refs/heads/$branch_name, resp. refs/pull/$pr_id/merge
+# - github.ref_name → $branch_name, resp. $pr_id/merge
+# - github.head_ref → $source_branch_name, e.g. "feature/foobar"
+# - github.base_ref → $destination_branch, e.g. "main"
+
+name: Validate
+
+on:
+
+  push:
+    branches:
+      - '**'
+
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+  workflow_call:
+
+jobs:
+
+  # Determine the branch names on which to run the actual jobs below.
+  init:
+    timeout-minutes: 1
+    runs-on: ubuntu-latest
+
+    outputs:
+      branches: ${{ steps.set_branches.outputs.branches }}
+
+    steps:
+    - id: set_branches
+      name: "Determine branches to check"
+      run: |
+        case "${{ github.event_name }}" in
+            "push") branches="[ \"${{ github.ref_name }}\" ]" ;;
+            "pull_request") branches="[ \"${{ github.ref }}\" ]" ;;
+            *)
+                echo "Unknown event: ${{ github.event_name }}" >&2
+                exit 1
+        esac
+        echo "branches=$branches" >> $GITHUB_OUTPUT
+
+
+  rustfmt:
+    needs: init
+    timeout-minutes: 5
+
+    # Results should be the same on all systems.
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+
+    steps:
+
+    # Avoid linter errors due to changed line endings
+    - run: git config --global core.autocrlf false
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    - name: Install nightly Rust toolchain with rustfmt
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rustfmt
+
+    - name: Run rustfmt
+      run: cargo xtask ci rustfmt
+
+
+  build:
+    name: build & test
+    needs: init
+    timeout-minutes: 15
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+        profile: [ dev, release ]
+
+    steps:
+
+    - name: Install stable Rust toolchain with clippy
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    # FIXME: `xtask ci build` tries to overwrite its own binary.
+    # FIXME: This is not possible on Windows, so install it before running it.
+    - name: Install xtask
+      run: cargo install --path xtask
+
+    - name: Run clippy
+      run: xtask ci clippy --profile ${{ matrix.profile }}
+
+    - name: Run tests
+      run: xtask ci test --profile ${{ matrix.profile }}
+
+    - name: Build artifacts
+      run: xtask ci build --profile ${{ matrix.profile }}
+
+
+  coverage:
+    needs: init
+    timeout-minutes: 15
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest ]
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+        profile: [ dev, release ]
+
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    # FIXME: Remove nightly once tarpaulin can run doctests on stable again
+    - name: Install nightly Rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-tarpaulin
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-tarpaulin
+
+    - name: Check coverage
+      run: cargo xtask ci tarpaulin --profile ${{ matrix.profile }}
+
+
+  miri:
+    needs: init
+    timeout-minutes: 15
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    - name: Install nightly Rust toolchain with miri
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    # FIXME: `xtask ci miri` runs `cargo clean`, deleting its own binary.
+    # FIXME: This is not possible on Windows, so install it before running it.
+    - name: Install xtask
+      run: cargo install --path xtask
+
+    - name: Run MIRI tests
+      run: xtask ci miri
+
+
+  docs:
+    needs: init
+    timeout-minutes: 5
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+        profile: [ dev, release ]
+
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    - name: Build documentation
+      run: cargo xtask ci docs --profile ${{ matrix.profile }}
+
+
+  deps:
+    needs: init
+    timeout-minutes: 5
+
+    # Results should be the same on all systems.
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-audit & cargo-upgrades
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-audit, cargo-upgrades
+
+    - name: Check dependencies
+      run: cargo xtask ci deps
+
+
+  msrv:
+    needs: init
+    timeout-minutes: 15
+    runs-on: ${{ matrix.system }}
+
+    strategy:
+      matrix:
+        rust-version: [ "1.81" ]
+        system: [ ubuntu-latest, windows-latest, macos-latest ]
+        branch: ${{ fromJson(needs.init.outputs.branches) }}
+        profile: [ dev, release ]
+
+    steps:
+
+    # `xtask` needs a recent Rust version.
+    - name: Install stable Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    # Install `xtask` using a recent Rust version to avoid build failures.
+    # FIXME: `xtask ci build` tries to overwrite its own binary.
+    # FIXME: This is not possible on Windows, so install it before running it.
+    - name: Install xtask
+      run: cargo install --path xtask
+
+    - name: Install Rust ${{ matrix.rust-version }} toolchain with clippy
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust-version }}
+        components: clippy
+
+    # Downgrade `Cargo.lock` file format version if necessary. Note that we
+    # nevertheless have to make sure that the file is up-to-date per se.
+    # That is done by the `deps` job above.
+    - name: Delete Cargo.lock to use up-to-date dependencies and correct file format version
+      run: rm Cargo.lock
+
+    - name: Run clippy
+      run: >
+        xtask ci clippy
+        --rust-version ${{ matrix.rust-version }}
+        --exclude-xtask
+        --profile ${{ matrix.profile }}
+
+    - name: Run tests
+      run: >
+        xtask ci test
+        --rust-version ${{ matrix.rust-version }}
+        --exclude-xtask
+        --profile ${{ matrix.profile }}
+
+    - name: Build artifacts
+      run: >
+        xtask ci build
+        --rust-version ${{ matrix.rust-version }}
+        --exclude-xtask
+        --profile ${{ matrix.profile }}
