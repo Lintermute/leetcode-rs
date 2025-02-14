@@ -118,9 +118,9 @@ checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
 name = "lazy_errors"
-version = "0.9.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b69ca8f5fa5a9d1c884556505ad439e19e2988fdb0e48ac0731b848b7583e85a"
+checksum = "38563710a0241a6df6b8bdd2319094df44181e93133e78c669c57f3052845baf"
 
 [[package]]
 name = "leetcode"
