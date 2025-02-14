@@ -9,14 +9,15 @@ pub struct ProductOfNumbers {
 
 impl ProductOfNumbers {
     pub fn new() -> Self {
-        Self { prods: vec![] }
+        Self { prods: vec![1] }
     }
 
     pub fn add(&mut self, num: i32) {
         if num == 0 {
-            self.prods.clear();
+            self.prods = vec![1];
         } else {
-            let last = self.prods.last().unwrap_or(&1);
+            let n = self.prods.len();
+            let last = self.prods[n - 1];
             self.prods.push(last * num);
         }
     }
@@ -24,16 +25,17 @@ impl ProductOfNumbers {
     pub fn get_product(&self, k: i32) -> i32 {
         let k = usize::try_from(k).unwrap();
         let n = self.prods.len();
-        let last = self.prods.last().copied().unwrap_or(0);
+        let m = n - 1;
 
         use core::cmp::Ordering::*;
-        match k.cmp(&n) {
+        match k.cmp(&(m)) {
             Greater => 0,
-            Equal => last,
+            Equal => self.prods[m],
             Less => {
-                let i = n - k - 1;
-                let prefix = self.prods[i];
-                last / prefix
+                let i = m - k;
+                let last = self.prods[m];
+                let pref = self.prods[i];
+                last / pref
             }
         }
     }
