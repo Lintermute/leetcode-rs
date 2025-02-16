@@ -14,14 +14,12 @@ pub fn num_tile_possibilities(tiles: String) -> i32 {
         }
     }
 
-    (1..=tiles.len())
-        .map(|len| combinations(len, &chars))
-        .sum()
+    combinations(&chars)
 }
 
-fn combinations(len: usize, chars: &HashMap<char, usize>) -> i32 {
-    if len == 0 {
-        return 1;
+fn combinations(chars: &HashMap<char, usize>) -> i32 {
+    if chars.is_empty() {
+        return 0;
     }
 
     chars
@@ -34,7 +32,7 @@ fn combinations(len: usize, chars: &HashMap<char, usize>) -> i32 {
                 chars.insert(char, freq - 1);
             }
 
-            combinations(len - 1, &chars)
+            1 + combinations(&chars)
         })
         .sum()
 }
