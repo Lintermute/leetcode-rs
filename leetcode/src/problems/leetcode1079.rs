@@ -18,10 +18,6 @@ pub fn num_tile_possibilities(tiles: String) -> i32 {
 }
 
 fn combinations(chars: &HashMap<char, usize>) -> i32 {
-    if chars.is_empty() {
-        return 0;
-    }
-
     chars
         .iter()
         .map(|(&char, &freq)| {
