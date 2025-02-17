@@ -1,5 +1,6 @@
 //! Contains one submodule per LeetCode problem solved.
 
+pub mod leetcode1079;
 pub mod leetcode1352;
 pub mod leetcode1718;
 pub mod leetcode1910;
